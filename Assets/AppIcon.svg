@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#11121C"/>
+      <stop offset="0.52" stop-color="#0A0B12"/>
+      <stop offset="1" stop-color="#1A1027"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.34" r="0.55">
+      <stop offset="0" stop-color="#FF9F2E" stop-opacity="0.42"/>
+      <stop offset="0.55" stop-color="#FF6A2E" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#FF6A2E" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0.15" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#FFC24B"/>
+      <stop offset="0.5" stop-color="#FF8A1E"/>
+      <stop offset="1" stop-color="#FF4D5A"/>
+    </linearGradient>
+    <linearGradient id="hand" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFE2BD"/>
+    </linearGradient>
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="ringGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+
+  <circle cx="512" cy="512" r="326" fill="none" stroke="#FFFFFF" stroke-opacity="0.055" stroke-width="46"/>
+  <circle cx="512" cy="512" r="326" fill="none" stroke="url(#ring)" stroke-opacity="0.35" stroke-width="46" filter="url(#ringGlow)"/>
+
+  <!-- 75% progress ring -->
+  <circle cx="512" cy="512" r="326" fill="none"
+          stroke="url(#ring)" stroke-width="40" stroke-linecap="round"
+          stroke-dasharray="1536 512"
+          transform="rotate(-90 512 512)"/>
+
+  <!-- tick marks -->
+  <circle cx="512" cy="512" r="270" fill="none"
+          stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="8"
+          stroke-dasharray="4 137.3"/>
+
+  <circle cx="512" cy="512" r="236" fill="#0B0D15" stroke="#FFFFFF" stroke-opacity="0.075" stroke-width="3"/>
+
+  <!-- clock hands -->
+  <line x1="512" y1="512" x2="512" y2="338" stroke="url(#hand)" stroke-width="26" stroke-linecap="round"/>
+  <line x1="512" y1="512" x2="622" y2="586" stroke="#FF8A1E" stroke-width="30" stroke-linecap="round"/>
+
+  <circle cx="512" cy="512" r="42" fill="#FF8A1E" opacity="0.28" filter="url(#softGlow)"/>
+  <circle cx="512" cy="512" r="25" fill="#FF9F2E"/>
+  <circle cx="512" cy="512" r="10" fill="#FFF3E3"/>
+
+  <!-- connection nodes -->
+  <circle cx="755" cy="289" r="15" fill="#35F09A" opacity="0.30" filter="url(#softGlow)"/>
+  <circle cx="755" cy="289" r="8" fill="#35F09A"/>
+  <circle cx="269" cy="735" r="15" fill="#A877FF" opacity="0.30" filter="url(#softGlow)"/>
+  <circle cx="269" cy="735" r="8" fill="#A877FF"/>
+</svg>

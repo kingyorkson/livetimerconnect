@@ -1,0 +1,181 @@
+name: Build IPA & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build unsigned app
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project LiveTimerConnect.xcodeproj \
+            -scheme LiveTimerConnect \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/LiveTimerConnect.xcarchive \
+            -derivedDataPath build/DerivedData \
+            MARKETING_VERSION="1.0.${{ github.run_number }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="" \
+            archive | tee build.log
+
+      - name: Package IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="build/LiveTimerConnect.xcarchive/Products/Applications/LiveTimerConnect.app"
+          test -d "$APP"
+          rm -rf build/Payload build/LiveTimerConnect.ipa
+          mkdir -p build/Payload
+          cp -R "$APP" build/Payload/
+          (cd build && zip -qry LiveTimerConnect.ipa Payload)
+          ls -lh build/LiveTimerConnect.ipa
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist"
+
+      - name: Prepare GitHub Pages site
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="build/LiveTimerConnect.xcarchive/Products/Applications/LiveTimerConnect.app"
+          IPA="build/LiveTimerConnect.ipa"
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist")
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist")
+          SIZE=$(stat -f%z "$IPA")
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          rm -rf public
+          mkdir -p public
+          cp -R docs/. public/
+          cp "$IPA" public/LiveTimerConnect.ipa
+          cp "LiveTimerConnect/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png" public/icon.png
+
+          cat > public/version.json <<EOF
+          {
+            "name": "Live Timer Connect",
+            "version": "$VERSION",
+            "build": "$BUILD",
+            "size": $SIZE,
+            "date": "$DATE",
+            "ipa": "LiveTimerConnect.ipa",
+            "bundleIdentifier": "com.kingyorkson.LiveTimerConnect"
+          }
+          EOF
+
+          python3 - <<PY
+          import json
+          source = {
+              "name": "Live Timer Connect",
+              "identifier": "com.kingyorkson.livetimerconnect.source",
+              "subtitle": "Timers and alarms that follow you.",
+              "description": "Live Timer Connect keeps timers and alarms in sync through iCloud, shows running timers as Live Activities, and rings with a loud custom ding.",
+              "iconURL": "https://kingyorkson.github.io/livetimerconnect/icon.png",
+              "headerURL": "https://kingyorkson.github.io/livetimerconnect/icon.png",
+              "website": "https://kingyorkson.github.io/livetimerconnect/",
+              "tintColor": "#FF9F2E",
+              "featuredApps": ["com.kingyorkson.LiveTimerConnect"],
+              "apps": [
+                  {
+                      "name": "Live Timer Connect",
+                      "bundleIdentifier": "com.kingyorkson.LiveTimerConnect",
+                      "developerName": "kingyorkson",
+                      "subtitle": "Timers and alarms that follow you.",
+                      "localizedDescription": "Quick timers, custom multi-day timers, alarms, iCloud sync, Live Activities on the Lock Screen, and a loud custom ding.",
+                      "iconURL": "https://kingyorkson.github.io/livetimerconnect/icon.png",
+                      "tintColor": "#FF9F2E",
+                      "category": "utilities",
+                      "versions": [
+                          {
+                              "version": "$VERSION",
+                              "date": "$DATE",
+                              "downloadURL": "https://kingyorkson.github.io/livetimerconnect/LiveTimerConnect.ipa",
+                              "size": $SIZE,
+                              "minOSVersion": "17.0"
+                          }
+                      ]
+                  }
+              ]
+          }
+          with open("public/altstore.json", "w") as f:
+              json.dump(source, f, indent=2)
+          PY
+
+          echo "Version: $VERSION ($BUILD)"
+          ls -lh public
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LiveTimerConnect-ipa
+          path: build/LiveTimerConnect.ipa
+          if-no-files-found: error
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Live Timer Connect 1.0.${{ github.run_number }}
+          body: |
+            Automated unsigned IPA build of Live Timer Connect.
+
+            Download the IPA below or from GitHub Pages:
+            https://kingyorkson.github.io/livetimerconnect/
+          files: build/LiveTimerConnect.ipa
+          generate_release_notes: true
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+          retention-days: 1
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

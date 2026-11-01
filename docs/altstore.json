@@ -1,0 +1,32 @@
+{
+  "name": "Live Timer Connect",
+  "identifier": "com.kingyorkson.livetimerconnect.source",
+  "subtitle": "Timers and alarms that follow you.",
+  "description": "Live Timer Connect keeps timers and alarms in sync through iCloud, shows running timers as Live Activities, and rings with a loud custom ding.",
+  "iconURL": "https://kingyorkson.github.io/livetimerconnect/icon.png",
+  "headerURL": "https://kingyorkson.github.io/livetimerconnect/icon.png",
+  "website": "https://kingyorkson.github.io/livetimerconnect/",
+  "tintColor": "#FF9F2E",
+  "featuredApps": ["com.kingyorkson.LiveTimerConnect"],
+  "apps": [
+    {
+      "name": "Live Timer Connect",
+      "bundleIdentifier": "com.kingyorkson.LiveTimerConnect",
+      "developerName": "kingyorkson",
+      "subtitle": "Timers and alarms that follow you.",
+      "localizedDescription": "Quick timers, custom multi-day timers, alarms, iCloud sync, Live Activities on the Lock Screen, and a loud custom ding.",
+      "iconURL": "https://kingyorkson.github.io/livetimerconnect/icon.png",
+      "tintColor": "#FF9F2E",
+      "category": "utilities",
+      "versions": [
+        {
+          "version": "1.0.0",
+          "date": "2026-10-31T00:00:00Z",
+          "downloadURL": "https://kingyorkson.github.io/livetimerconnect/LiveTimerConnect.ipa",
+          "size": 0,
+          "minOSVersion": "17.0"
+        }
+      ]
+    }
+  ]
+}
