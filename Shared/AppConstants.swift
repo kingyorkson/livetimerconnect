@@ -7,7 +7,7 @@ enum AppConstants {
 
     static let darwinStateChanged = "com.kingyorkson.LiveTimerConnect.stateChanged"
 
-    static let maxTimerDuration: TimeInterval = (29 * 86_400) + (23 * 3_600) + (59 * 60) + 59
+    static let maxTimerDuration: TimeInterval = 2_591_999
     static let builtInQuickTimerDurations: [TimeInterval] = [60, 120, 180, 300, 600, 1_800]
 
     static let timerNotificationPrefix = "timer-"

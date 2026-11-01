@@ -54,7 +54,7 @@ final class DarwinNotificationCenter {
                 let center = Unmanaged<DarwinNotificationCenter>
                     .fromOpaque(observer)
                     .takeUnretainedValue()
-                center.dispatch(notificationName as String)
+                center.dispatch(notificationName.rawValue as String)
             },
             name as CFString,
             nil,
