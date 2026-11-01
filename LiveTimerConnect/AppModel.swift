@@ -447,6 +447,21 @@ final class AppModel: ObservableObject {
 
     // MARK: - Settings
 
+    func syncNow() {
+        guard sync.isAvailable else {
+            showToast("Sign in to iCloud to sync")
+            return
+        }
+
+        if let remote = sync.readRemote() {
+            mergeRemote(remote)
+            showToast("Synced with iCloud")
+        } else {
+            sync.push(snapshot, force: true)
+            showToast("Syncing with iCloud")
+        }
+    }
+
     func refreshNotificationStatus(requestIfNeeded: Bool = false) async {
         if requestIfNeeded {
             notificationStatus = await notifications.requestAuthorization()

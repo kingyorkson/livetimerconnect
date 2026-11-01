@@ -90,12 +90,7 @@ struct SettingsView: View {
                             icon: "arrow.triangle.2.circlepath",
                             tint: AppTheme.orange
                         ) {
-                            model.sync.push(model.snapshot, force: true)
-                            model.showToast(
-                                model.sync.isAvailable
-                                    ? "Syncing with iCloud"
-                                    : "Sign in to iCloud to sync"
-                            )
+                            model.syncNow()
                         }
                     }
 
