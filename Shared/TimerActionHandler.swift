@@ -1,5 +1,6 @@
 import ActivityKit
 import Foundation
+import UserNotifications
 import WidgetKit
 
 enum TimerAction: String {
@@ -15,6 +16,7 @@ enum TimerActionHandler {
         guard let uuid = UUID(uuidString: timerID) else { return false }
 
         var didChange = false
+        var updatedTimer: TimerItem?
         SharedStore.shared.update { snapshot in
             guard let index = snapshot.timers.firstIndex(where: { $0.id == uuid }) else { return }
             var timer = snapshot.timers[index]
@@ -54,14 +56,66 @@ enum TimerActionHandler {
             timer.updatedAt = now
             snapshot.timers[index] = timer
             snapshot.updatedAt = now
+            updatedTimer = timer
             didChange = true
         }
 
         if didChange {
+            if let updatedTimer {
+                syncNotification(for: updatedTimer)
+            }
             WidgetCenter.shared.reloadAllTimelines()
             DarwinNotificationCenter.shared.post(AppConstants.darwinStateChanged)
         }
         return didChange
+    }
+
+    /// The intent can run while the SwiftUI app is not active, so it must also
+    /// keep the timer's local notification in step with the new state.
+    private static func syncNotification(for timer: TimerItem) {
+        let identifier = AppConstants.timerNotificationPrefix + timer.id.uuidString
+        let center = UNUserNotificationCenter.current()
+
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+
+        guard !timer.isDeleted, timer.state == .running,
+              let endDate = timer.endDate else {
+            if timer.isDeleted {
+                center.removeDeliveredNotifications(withIdentifiers: [identifier])
+            }
+            return
+        }
+
+        let interval = endDate.timeIntervalSinceNow
+        guard interval > 0 else { return }
+
+        center.removeDeliveredNotifications(withIdentifiers: [identifier])
+
+        let content = UNMutableNotificationContent()
+        content.title = timer.displayName
+        content.body = "\(timer.displayName) has ended"
+        content.sound = UNNotificationSound(
+            named: UNNotificationSoundName(rawValue: AppConstants.customSoundName)
+        )
+        content.categoryIdentifier = AppConstants.timerCategory
+        content.threadIdentifier = "timers"
+        content.interruptionLevel = .timeSensitive
+        content.relevanceScore = 1
+        content.userInfo = [
+            "kind": "timer",
+            "timerID": timer.id.uuidString
+        ]
+
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: max(1, interval),
+            repeats: false
+        )
+        let request = UNNotificationRequest(
+            identifier: identifier,
+            content: content,
+            trigger: trigger
+        )
+        center.add(request)
     }
 
     /// Mutates the shared store and then updates the matching Live Activity.
