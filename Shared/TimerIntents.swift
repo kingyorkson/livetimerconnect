@@ -19,7 +19,7 @@ struct ToggleTimerPauseIntent: LiveActivityIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        _ = TimerActionHandler.perform(.togglePause, timerID: timerID)
+        await TimerActionHandler.performAndRefresh(.togglePause, timerID: timerID)
         return .result()
     }
 }
@@ -39,7 +39,7 @@ struct StopTimerIntent: LiveActivityIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        _ = TimerActionHandler.perform(.stop, timerID: timerID)
+        await TimerActionHandler.performAndRefresh(.stop, timerID: timerID)
         return .result()
     }
 }
@@ -59,7 +59,7 @@ struct RestartTimerIntent: LiveActivityIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        _ = TimerActionHandler.perform(.restart, timerID: timerID)
+        await TimerActionHandler.performAndRefresh(.restart, timerID: timerID)
         return .result()
     }
 }
@@ -79,7 +79,7 @@ struct DismissTimerIntent: LiveActivityIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        _ = TimerActionHandler.perform(.dismiss, timerID: timerID)
+        await TimerActionHandler.performAndRefresh(.dismiss, timerID: timerID)
         return .result()
     }
 }
