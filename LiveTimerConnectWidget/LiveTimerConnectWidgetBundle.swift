@@ -5,5 +5,6 @@ import WidgetKit
 struct LiveTimerConnectWidgetBundle: WidgetBundle {
     var body: some Widget {
         TimerLiveActivityWidget()
+        QuickTimerWidget()
     }
 }

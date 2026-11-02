@@ -12,6 +12,25 @@ enum WidgetPalette {
     static let secondary = Color.white.opacity(0.56)
 }
 
+/// The app updates a finished Live Activity to the completed state when it is
+/// running. If the app is not running, the activity becomes stale at its
+/// `endDate`; treating a stale or expired running activity as completed keeps
+/// the Lock Screen card useful (Restart and X) without a server push.
+private func displayState(for context: ActivityViewContext<TimerActivityAttributes>) -> TimerState {
+    if context.state.state == .completed {
+        return .completed
+    }
+    if context.state.state == .running,
+       let endDate = context.state.endDate,
+       endDate <= .now {
+        return .completed
+    }
+    if context.isStale {
+        return .completed
+    }
+    return context.state.state
+}
+
 struct TimerLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: TimerActivityAttributes.self) { context in
@@ -32,7 +51,7 @@ struct TimerLiveActivityWidget: Widget {
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
-                    ActivityStatusBadge(state: context.state.state)
+                    ActivityStatusBadge(state: displayState(for: context))
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
@@ -75,12 +94,12 @@ private struct TimerLockScreenView: View {
 
                 Spacer(minLength: 6)
 
-                ActivityStatusBadge(state: context.state.state)
+                ActivityStatusBadge(state: displayState(for: context))
             }
 
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    if context.state.state == .completed {
+                    if displayState(for: context) == .completed {
                         Text("Has ended")
                             .font(.system(size: 29, weight: .black, design: .rounded))
                             .foregroundStyle(.white)
@@ -105,7 +124,7 @@ private struct TimerLockScreenView: View {
     }
 
     private var subtitle: String {
-        switch context.state.state {
+        switch displayState(for: context) {
         case .running:
             if let endDate = context.state.endDate {
                 return "Ends at \(endDate.formatted(date: .omitted, time: .shortened))"
@@ -124,11 +143,12 @@ private struct CountdownText: View {
     let size: CGFloat
 
     var body: some View {
+        let now = Date()
         Group {
-            switch context.state.state {
+            switch displayState(for: context) {
             case .running:
-                if let endDate = context.state.endDate, endDate > .now {
-                    Text(timerInterval: Date.now...endDate, countsDown: true)
+                if let endDate = context.state.endDate, endDate > now {
+                    Text(timerInterval: now...endDate, countsDown: true)
                 } else {
                     Text("00:00")
                 }
@@ -150,11 +170,12 @@ private struct CompactCountdown: View {
     let context: ActivityViewContext<TimerActivityAttributes>
 
     var body: some View {
+        let now = Date()
         Group {
-            switch context.state.state {
+            switch displayState(for: context) {
             case .running:
-                if let endDate = context.state.endDate, endDate > .now {
-                    Text(timerInterval: Date.now...endDate, countsDown: true)
+                if let endDate = context.state.endDate, endDate > now {
+                    Text(timerInterval: now...endDate, countsDown: true)
                 } else {
                     Text("0:00")
                 }
@@ -213,7 +234,7 @@ private struct ActivityControls: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if context.state.state == .completed {
+            if displayState(for: context) == .completed {
                 ActivityIntentButton(
                     systemName: "arrow.counterclockwise",
                     tint: WidgetPalette.orange,
@@ -229,8 +250,8 @@ private struct ActivityControls: View {
                 )
             } else {
                 ActivityIntentButton(
-                    systemName: context.state.state == .running ? "pause.fill" : "play.fill",
-                    tint: context.state.state == .running ? WidgetPalette.blue : WidgetPalette.green,
+                    systemName: displayState(for: context) == .running ? "pause.fill" : "play.fill",
+                    tint: displayState(for: context) == .running ? WidgetPalette.blue : WidgetPalette.green,
                     size: size,
                     intent: ToggleTimerPauseIntent(timerID: timerID)
                 )

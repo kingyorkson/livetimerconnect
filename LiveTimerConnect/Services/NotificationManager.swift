@@ -11,6 +11,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationManager()
 
     var onTimerAction: ((UUID, TimerNotificationAction) -> Void)?
+    private(set) var criticalAlertsAuthorized = false
 
     private let center = UNUserNotificationCenter.current()
     private var previewPlayer: AVAudioPlayer?
@@ -31,34 +32,72 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         registerCategories()
     }
 
-    func requestAuthorization() async -> UNAuthorizationStatus {
-        let settings = await center.notificationSettings()
-        if settings.authorizationStatus == .notDetermined {
-            _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge, .timeSensitive])
+    // MARK: - Authorization
+
+    func requestAuthorization(requestCritical: Bool = false) async -> UNAuthorizationStatus {
+        let current = await center.notificationSettings()
+        if current.authorizationStatus == .notDetermined {
+            var granted = false
+            do {
+                granted = try await center.requestAuthorization(
+                    options: [.alert, .sound, .badge, .timeSensitive, .criticalAlert]
+                )
+            } catch {
+                granted = false
+            }
+
+            if !granted {
+                // A sideloaded build can lose the critical-alerts entitlement.
+                // Standard notifications still work, so ask for those instead.
+                _ = try? await center.requestAuthorization(
+                    options: [.alert, .sound, .badge, .timeSensitive]
+                )
+            }
+        } else if requestCritical && current.criticalAlertSetting != .enabled {
+            // Existing installs may already have standard notifications. The
+            // Settings button makes one explicit attempt to add critical alerts.
+            _ = try? await center.requestAuthorization(options: [.criticalAlert])
         }
-        return await center.notificationSettings().authorizationStatus
+
+        let settings = await center.notificationSettings()
+        updateCriticalSetting(settings)
+        return settings.authorizationStatus
     }
 
     func authorizationStatus() async -> UNAuthorizationStatus {
-        await center.notificationSettings().authorizationStatus
+        let settings = await center.notificationSettings()
+        updateCriticalSetting(settings)
+        return settings.authorizationStatus
     }
+
+    private func updateCriticalSetting(_ settings: UNNotificationSettings) {
+        let enabled = settings.criticalAlertSetting == .enabled
+        criticalAlertsAuthorized = enabled
+        NotificationSupport.criticalAlertsAuthorized = enabled
+    }
+
+    // MARK: - Reconciliation
 
     func reconcile(_ snapshot: SharedSnapshot) {
         let now = Date()
 
         for timer in snapshot.timers {
-            let identifier = AppConstants.timerNotificationPrefix + timer.id.uuidString
-            if timer.isDeleted || timer.state == .paused {
-                center.removePendingNotificationRequests(withIdentifiers: [identifier])
-            } else if timer.state == .running, let endDate = timer.endDate, endDate > now {
-                scheduleTimer(timer)
+            if timer.isDeleted {
+                NotificationSupport.cancelTimer(timer.id)
+            } else if timer.state == .paused {
+                NotificationSupport.cancelTimer(timer.id, includeDelivered: false)
+            } else if timer.state == .running,
+                      let endDate = timer.endDate,
+                      endDate > now {
+                NotificationSupport.scheduleTimer(timer, now: now)
             }
+            // Completed timers keep the notification and follow-up ring that
+            // were scheduled before they ended. Stop/dismiss cancels them.
         }
 
         for alarm in snapshot.alarms {
-            let identifier = AppConstants.alarmNotificationPrefix + alarm.id.uuidString
             if alarm.isDeleted || !alarm.isEnabled {
-                center.removePendingNotificationRequests(withIdentifiers: [identifier])
+                NotificationSupport.cancelAlarm(id: alarm.id)
             } else {
                 scheduleAlarm(alarm)
             }
@@ -66,119 +105,114 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func cancelTimer(id: UUID) {
-        let identifier = AppConstants.timerNotificationPrefix + id.uuidString
-        center.removePendingNotificationRequests(withIdentifiers: [identifier])
-        center.removeDeliveredNotifications(withIdentifiers: [identifier])
+        NotificationSupport.cancelTimer(id)
     }
 
     func cancelAlarm(id: UUID) {
-        let identifier = AppConstants.alarmNotificationPrefix + id.uuidString
-        center.removePendingNotificationRequests(withIdentifiers: [identifier])
-        center.removeDeliveredNotifications(withIdentifiers: [identifier])
+        NotificationSupport.cancelAlarm(id)
     }
 
     // MARK: - Scheduling
 
-    private func scheduleTimer(_ timer: TimerItem) {
-        guard let endDate = timer.endDate else { return }
-        let interval = endDate.timeIntervalSinceNow
-        guard interval > 0 else { return }
-
-        let content = UNMutableNotificationContent()
-        content.title = timer.displayName
-        content.body = "\(timer.displayName) has ended"
-        content.sound = notificationSound()
-        content.categoryIdentifier = AppConstants.timerCategory
-        content.threadIdentifier = "timers"
-        content.interruptionLevel = .timeSensitive
-        content.relevanceScore = 1
-        content.userInfo = [
-            "kind": "timer",
-            "timerID": timer.id.uuidString
-        ]
-
-        let trigger = UNTimeIntervalNotificationTrigger(
-            timeInterval: max(1, interval),
-            repeats: false
-        )
-        let request = UNNotificationRequest(
-            identifier: AppConstants.timerNotificationPrefix + timer.id.uuidString,
-            content: content,
-            trigger: trigger
-        )
-        center.add(request)
-    }
-
     private func scheduleAlarm(_ alarm: AlarmItem) {
-        let content = UNMutableNotificationContent()
-        content.title = alarm.displayLabel
-        content.body = "\(alarm.timeText) alarm is ringing."
-        content.sound = notificationSound()
-        content.categoryIdentifier = AppConstants.alarmCategory
-        content.threadIdentifier = "alarms"
-        content.interruptionLevel = .timeSensitive
-        content.relevanceScore = 1
-        content.userInfo = [
-            "kind": "alarm",
-            "alarmID": alarm.id.uuidString,
-            "alarmLabel": alarm.displayLabel,
-            "alarmTime": alarm.timeText
-        ]
+        let baseIdentifier = AppConstants.alarmNotificationPrefix + alarm.id.uuidString
+        let ringIdentifiers = NotificationSupport.alarmRingIdentifiers(for: alarm.id)
 
-        let trigger: UNNotificationTrigger
+        // Replacing the base request is fine, but never remove a delivered
+        // alarm while reconciliation runs. That would clear a ringing alert
+        // just because the app came to the foreground.
+        center.removePendingNotificationRequests(withIdentifiers: [baseIdentifier] + ringIdentifiers)
+
+        let content = NotificationSupport.alarmContent(
+            label: alarm.displayLabel,
+            timeText: alarm.timeText,
+            alarmID: alarm.id,
+            body: "\(alarm.timeText) alarm is ringing."
+        )
+        let next = nextFireDate(for: alarm)
+        let interval = max(1, next.timeIntervalSinceNow)
+
         if alarm.repeatsDaily {
             var components = DateComponents()
             components.hour = alarm.hour
             components.minute = alarm.minute
             components.second = 0
-            trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+            center.add(UNNotificationRequest(
+                identifier: baseIdentifier,
+                content: content,
+                trigger: trigger
+            ))
         } else {
-            let calendar = Calendar.current
-            var components = calendar.dateComponents([.year, .month, .day], from: .now)
-            components.hour = alarm.hour
-            components.minute = alarm.minute
-            components.second = 0
-            var next = calendar.date(from: components) ?? .now
-            if next <= .now {
-                next = calendar.date(byAdding: .day, value: 1, to: next) ?? next.addingTimeInterval(86_400)
-            }
-            trigger = UNTimeIntervalNotificationTrigger(
-                timeInterval: max(1, next.timeIntervalSinceNow),
-                repeats: false
-            )
+            let baseTrigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
+            center.add(UNNotificationRequest(
+                identifier: baseIdentifier,
+                content: content,
+                trigger: baseTrigger
+            ))
         }
 
-        let request = UNNotificationRequest(
-            identifier: AppConstants.alarmNotificationPrefix + alarm.id.uuidString,
-            content: content,
-            trigger: trigger
-        )
-        center.add(request)
+        // A few extra rings make the alarm feel like a native alarm that keeps
+        // going until it is stopped. The long custom sound covers each 30-second
+        // gap. Stopping or snoozing cancels the remaining rings without
+        // touching a repeating alarm's request for tomorrow.
+        for (index, identifier) in ringIdentifiers.enumerated() {
+            let ringContent = NotificationSupport.alarmContent(
+                label: alarm.displayLabel,
+                timeText: alarm.timeText,
+                alarmID: alarm.id,
+                body: "\(alarm.timeText) alarm is still ringing."
+            )
+            let delay = AppConstants.notificationRingDelay * TimeInterval(index + 1)
+            let trigger = UNTimeIntervalNotificationTrigger(
+                timeInterval: interval + delay,
+                repeats: false
+            )
+            center.add(UNNotificationRequest(
+                identifier: identifier,
+                content: ringContent,
+                trigger: trigger
+            ))
+        }
+    }
+
+    private func nextFireDate(for alarm: AlarmItem) -> Date {
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day], from: .now)
+        components.hour = alarm.hour
+        components.minute = alarm.minute
+        components.second = 0
+        var next = calendar.date(from: components) ?? .now
+        if next <= .now {
+            next = calendar.date(byAdding: .day, value: 1, to: next) ?? next.addingTimeInterval(86_400)
+        }
+        return next
     }
 
     private func scheduleSnooze(userInfo: [AnyHashable: Any]) {
-        let content = UNMutableNotificationContent()
-        content.title = userInfo["alarmLabel"] as? String ?? "Alarm"
-        content.body = "Snoozed alarm is ringing."
-        content.sound = notificationSound()
-        content.categoryIdentifier = AppConstants.alarmCategory
-        content.threadIdentifier = "alarms"
-        content.interruptionLevel = .timeSensitive
-        content.userInfo = userInfo
+        guard let alarmIDString = userInfo["alarmID"] as? String,
+              let alarmID = UUID(uuidString: alarmIDString) else { return }
 
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5 * 60, repeats: false)
-        let request = UNNotificationRequest(
-            identifier: "alarm-snooze-\(UUID().uuidString)",
+        let label = userInfo["alarmLabel"] as? String ?? "Alarm"
+        let timeText = userInfo["alarmTime"] as? String ?? "Snoozed"
+        let content = NotificationSupport.alarmContent(
+            label: label,
+            timeText: timeText,
+            alarmID: alarmID,
+            body: "Snoozed alarm is ringing."
+        )
+
+        let identifier = NotificationSupport.snoozeIdentifier(for: alarmID)
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: AppConstants.alarmSnoozeInterval,
+            repeats: false
+        )
+        center.add(UNNotificationRequest(
+            identifier: identifier,
             content: content,
             trigger: trigger
-        )
-        center.add(request)
-    }
-
-    private func notificationSound() -> UNNotificationSound {
-        UNNotificationSound(
-            named: UNNotificationSoundName(rawValue: AppConstants.customSoundName)
-        )
+        ))
     }
 
     private func registerCategories() {
@@ -200,7 +234,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
         let alarmSnooze = UNNotificationAction(
             identifier: ActionID.alarmSnooze,
-            title: "Snooze 5 minutes"
+            title: "Snooze 9 minutes"
         )
         let alarmStop = UNNotificationAction(
             identifier: ActionID.alarmStop,
@@ -253,18 +287,27 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
            let timerID = UUID(uuidString: timerIDString) {
             switch response.actionIdentifier {
             case ActionID.timerRestart:
-                center.removeDeliveredNotifications(
-                    withIdentifiers: [AppConstants.timerNotificationPrefix + timerID.uuidString]
-                )
+                NotificationSupport.cancelTimer(timerID)
                 onTimerAction?(timerID, .restart)
             case ActionID.timerStop:
+                NotificationSupport.cancelTimer(timerID)
                 onTimerAction?(timerID, .stop)
             default:
                 break
             }
-        } else if userInfo["kind"] as? String == "alarm" {
-            if response.actionIdentifier == ActionID.alarmSnooze {
+        } else if userInfo["kind"] as? String == "alarm",
+                  let alarmIDString = userInfo["alarmID"] as? String,
+                  let alarmID = UUID(uuidString: alarmIDString) {
+            switch response.actionIdentifier {
+            case ActionID.alarmSnooze:
+                NotificationSupport.stopAlarmDelivered(alarmID)
+                NotificationSupport.stopAlarmRing(alarmID)
                 scheduleSnooze(userInfo: userInfo)
+            case ActionID.alarmStop:
+                NotificationSupport.stopAlarmDelivered(alarmID)
+                NotificationSupport.stopAlarmRing(alarmID)
+            default:
+                break
             }
         }
 

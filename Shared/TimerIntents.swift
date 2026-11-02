@@ -83,3 +83,26 @@ struct DismissTimerIntent: LiveActivityIntent {
         return .result()
     }
 }
+
+/// Starts a saved quick timer from the Home Screen or Lock Screen widget.
+/// `LiveActivityIntent` makes the system run this in the app process, which
+/// lets it update the shared store, start a Live Activity, and push to iCloud.
+struct StartQuickTimerIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Start Quick Timer"
+    static var openAppWhenRun: Bool = false
+    static var isDiscoverable: Bool = false
+
+    @Parameter(title: "Duration")
+    var duration: Double
+
+    init() {}
+
+    init(duration: Double) {
+        self.duration = duration
+    }
+
+    func perform() async throws -> some IntentResult {
+        await TimerActionHandler.startTimer(duration: duration)
+        return .result()
+    }
+}

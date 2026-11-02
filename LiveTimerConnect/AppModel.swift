@@ -4,6 +4,7 @@ import Combine
 import UIKit
 import UserNotifications
 import ActivityKit
+import WidgetKit
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -11,6 +12,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var now = Date()
     @Published private(set) var notificationStatus: UNAuthorizationStatus = .notDetermined
     @Published private(set) var liveActivitiesEnabled = false
+    @Published private(set) var criticalAlertsEnabled = false
     @Published var toast: String?
 
     let sync = CloudSyncManager()
@@ -96,6 +98,7 @@ final class AppModel: ObservableObject {
 
         normalizeTimers()
         store.save(snapshot)
+        WidgetCenter.shared.reloadAllTimelines()
 
         sync.onRemoteSnapshot = { [weak self] remote in
             Task { @MainActor in
@@ -172,6 +175,7 @@ final class AppModel: ObservableObject {
         store.save(snapshot)
         notifications.reconcile(snapshot)
         sync.push(snapshot)
+        WidgetCenter.shared.reloadAllTimelines()
         Task {
             await LiveActivityManager.shared.reconcile(snapshot.timers, now: now)
         }
@@ -245,6 +249,7 @@ final class AppModel: ObservableObject {
         store.save(snapshot)
         notifications.reconcile(snapshot)
         sync.push(snapshot)
+        WidgetCenter.shared.reloadAllTimelines()
 
         let timers = snapshot.timers
         let currentTime = now
@@ -263,6 +268,7 @@ final class AppModel: ObservableObject {
             snapshot = merged
             store.save(snapshot)
             notifications.reconcile(snapshot)
+            WidgetCenter.shared.reloadAllTimelines()
             Task {
                 await LiveActivityManager.shared.reconcile(snapshot.timers)
             }
@@ -283,6 +289,7 @@ final class AppModel: ObservableObject {
         store.save(snapshot)
         notifications.reconcile(snapshot)
         sync.push(snapshot, force: true)
+        WidgetCenter.shared.reloadAllTimelines()
 
         Task {
             await LiveActivityManager.shared.reconcile(snapshot.timers)
@@ -468,12 +475,19 @@ final class AppModel: ObservableObject {
         } else {
             notificationStatus = await notifications.authorizationStatus()
         }
+        criticalAlertsEnabled = notifications.criticalAlertsAuthorized
         liveActivitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
+
+        // The cached critical-alert state may have changed, so reschedule with
+        // the critical sound or the standard fallback now.
+        notifications.reconcile(snapshot)
     }
 
     func requestNotifications() {
         Task {
-            notificationStatus = await notifications.requestAuthorization()
+            notificationStatus = await notifications.requestAuthorization(requestCritical: true)
+            criticalAlertsEnabled = notifications.criticalAlertsAuthorized
+            notifications.reconcile(snapshot)
         }
     }
 

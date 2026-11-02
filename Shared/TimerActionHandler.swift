@@ -1,6 +1,5 @@
 import ActivityKit
 import Foundation
-import UserNotifications
 import WidgetKit
 
 enum TimerAction: String {
@@ -17,7 +16,7 @@ enum TimerActionHandler {
 
         var didChange = false
         var updatedTimer: TimerItem?
-        SharedStore.shared.update { snapshot in
+        let snapshot = SharedStore.shared.update { snapshot in
             guard let index = snapshot.timers.firstIndex(where: { $0.id == uuid }) else { return }
             var timer = snapshot.timers[index]
 
@@ -64,58 +63,61 @@ enum TimerActionHandler {
             if let updatedTimer {
                 syncNotification(for: updatedTimer)
             }
+            SharedCloudSync.push(snapshot)
+            #if APP_PROCESS
             WidgetCenter.shared.reloadAllTimelines()
+            #endif
             DarwinNotificationCenter.shared.post(AppConstants.darwinStateChanged)
         }
         return didChange
     }
 
+    /// Starts a timer from the Home Screen or Lock Screen widget. This runs as a
+    /// LiveActivityIntent in the app process, so it can save the timer, start the
+    /// Live Activity, schedule the notification, and publish to iCloud without
+    /// bringing the full app UI forward.
+    @discardableResult
+    static func startTimer(duration: TimeInterval, now: Date = .now) async -> Bool {
+        let safeDuration = min(max(1, duration.rounded()), AppConstants.maxTimerDuration)
+        let timer = TimerItem(
+            totalDuration: safeDuration,
+            state: .running,
+            endDate: now.addingTimeInterval(safeDuration),
+            startedAt: now,
+            updatedAt: now
+        )
+
+        let snapshot = SharedStore.shared.update { snapshot in
+            snapshot.timers.insert(timer, at: 0)
+            snapshot.updatedAt = now
+        }
+
+        NotificationSupport.scheduleTimer(timer, now: now)
+        SharedCloudSync.push(snapshot)
+        #if APP_PROCESS
+        WidgetCenter.shared.reloadAllTimelines()
+        #endif
+        DarwinNotificationCenter.shared.post(AppConstants.darwinStateChanged)
+        await refreshLiveActivities(timerID: timer.id)
+        return true
+    }
+
     /// The intent can run while the SwiftUI app is not active, so it must also
     /// keep the timer's local notification in step with the new state.
     private static func syncNotification(for timer: TimerItem) {
-        let identifier = AppConstants.timerNotificationPrefix + timer.id.uuidString
-        let center = UNUserNotificationCenter.current()
-
-        center.removePendingNotificationRequests(withIdentifiers: [identifier])
-
-        guard !timer.isDeleted, timer.state == .running,
-              let endDate = timer.endDate else {
+        switch timer.state {
+        case .running:
+            NotificationSupport.scheduleTimer(timer)
+        case .paused:
+            NotificationSupport.cancelTimer(timer.id, includeDelivered: false)
+        case .completed:
+            // A timer that ended naturally leaves its already-scheduled end
+            // notification and follow-up ring alone. Stop and dismiss mark the
+            // timer deleted and cancel everything.
             if timer.isDeleted {
-                center.removeDeliveredNotifications(withIdentifiers: [identifier])
+                NotificationSupport.cancelTimer(timer.id)
             }
-            return
         }
-
-        let interval = endDate.timeIntervalSinceNow
-        guard interval > 0 else { return }
-
-        center.removeDeliveredNotifications(withIdentifiers: [identifier])
-
-        let content = UNMutableNotificationContent()
-        content.title = timer.displayName
-        content.body = "\(timer.displayName) has ended"
-        content.sound = UNNotificationSound(
-            named: UNNotificationSoundName(rawValue: AppConstants.customSoundName)
-        )
-        content.categoryIdentifier = AppConstants.timerCategory
-        content.threadIdentifier = "timers"
-        content.interruptionLevel = .timeSensitive
-        content.relevanceScore = 1
-        content.userInfo = [
-            "kind": "timer",
-            "timerID": timer.id.uuidString
-        ]
-
-        let trigger = UNTimeIntervalNotificationTrigger(
-            timeInterval: max(1, interval),
-            repeats: false
-        )
-        let request = UNNotificationRequest(
-            identifier: identifier,
-            content: content,
-            trigger: trigger
-        )
-        center.add(request)
     }
 
     /// Mutates the shared store and then updates the matching Live Activity.
@@ -153,13 +155,9 @@ enum TimerActionHandler {
             return
         }
 
-        guard timer.state != .completed else {
-            for activity in activities {
-                await activity.end(content, dismissalPolicy: .default)
-            }
-            return
-        }
-
+        // Keep a completed activity active instead of ending it. That is what
+        // leaves the "Has ended" card on the Lock Screen with Restart and X
+        // until the person explicitly dismisses it.
         if let current = activities.first(where: {
             $0.activityState == .active || $0.activityState == .stale
         }) {
@@ -170,8 +168,11 @@ enum TimerActionHandler {
             return
         }
 
-        // Restarting an ended timer needs a fresh activity. LiveActivityIntent
-        // is allowed to start one without bringing the app to the foreground.
+        // Do not resurrect a completed activity that the person already swiped
+        // away. Running and paused timers can request a fresh activity, which
+        // also handles restarting after the card was dismissed.
+        guard timer.state != .completed else { return }
+
         for activity in activities {
             await activity.end(nil, dismissalPolicy: .immediate)
         }

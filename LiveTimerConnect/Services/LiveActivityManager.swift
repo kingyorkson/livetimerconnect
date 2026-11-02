@@ -7,7 +7,6 @@ final class LiveActivityManager {
 
     private var activities: [UUID: Activity<TimerActivityAttributes>] = [:]
     private var lastStates: [UUID: TimerActivityAttributes.ContentState] = [:]
-    private var endedIDs = Set<UUID>()
 
     private init() {
         adoptExistingActivities()
@@ -24,7 +23,6 @@ final class LiveActivityManager {
             }
             activities[id] = nil
             lastStates[id] = nil
-            endedIDs.remove(id)
         }
 
         for timer in validTimers {
@@ -32,8 +30,6 @@ final class LiveActivityManager {
 
             switch timer.state {
             case .running, .paused:
-                endedIDs.remove(timer.id)
-
                 if let activity = activities[timer.id], activity.activityState == .active || activity.activityState == .stale {
                     if lastStates[timer.id] != state {
                         lastStates[timer.id] = state
@@ -50,17 +46,23 @@ final class LiveActivityManager {
                 }
 
             case .completed:
-                endedIDs.insert(timer.id)
-                if let activity = activities[timer.id] {
+                // Keep the completed activity active so the Lock Screen card
+                // stays visible with Restart and X until the person dismisses
+                // it. Ending it would hand control to the system's short-lived
+                // ended-activity UI.
+                guard let activity = activities[timer.id],
+                      activity.activityState == .active || activity.activityState == .stale else {
                     activities[timer.id] = nil
                     lastStates[timer.id] = nil
-                    let content = ActivityContent(state: state, staleDate: nil)
-                    await activity.end(content, dismissalPolicy: .default)
+                    continue
+                }
+
+                if lastStates[timer.id] != state {
+                    lastStates[timer.id] = state
+                    await activity.update(ActivityContent(state: state, staleDate: nil))
                 }
             }
         }
-
-        endedIDs.formIntersection(validIDs)
     }
 
     func endAll() async {
@@ -69,7 +71,6 @@ final class LiveActivityManager {
         }
         activities.removeAll()
         lastStates.removeAll()
-        endedIDs.removeAll()
     }
 
     private func adoptExistingActivities() {

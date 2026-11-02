@@ -12,9 +12,14 @@ enum AppConstants {
 
     static let timerNotificationPrefix = "timer-"
     static let alarmNotificationPrefix = "alarm-"
+    static let notificationRingSuffix = "-ring"
+    static let notificationRingDelay: TimeInterval = 30
+    static let alarmRingCount = 2
+    static let alarmSnoozeInterval: TimeInterval = 9 * 60
     static let timerCategory = "TIMER_ENDED"
     static let alarmCategory = "ALARM"
     static let customSoundName = "ding.wav"
+    static let quickTimerWidgetKind = "QuickTimerWidget"
     static let appDisplayName = "Live Timer Connect"
 
     static let repositoryURL = URL(string: "https://github.com/kingyorkson/livetimerconnect")!

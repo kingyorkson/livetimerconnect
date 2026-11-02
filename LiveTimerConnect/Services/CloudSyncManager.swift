@@ -87,7 +87,12 @@ final class CloudSyncManager: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.refreshAvailability()
+                guard let self else { return }
+                self.refreshAvailability()
+                guard self.isAvailable, let remote = self.readRemote() else { return }
+                self.lastSyncedAt = .now
+                self.status = .synced(.now)
+                self.onRemoteSnapshot?(remote)
             }
         }
     }

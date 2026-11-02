@@ -41,12 +41,14 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "APP_PROCESS"
     dependencies:
       - target: LiveTimerConnectWidget
         embed: true
       - sdk: ActivityKit.framework
       - sdk: WidgetKit.framework
       - sdk: AppIntents.framework
+      - sdk: UserNotifications.framework
 
   LiveTimerConnectWidget:
     type: app-extension
@@ -66,11 +68,13 @@ targets:
         SKIP_INSTALL: YES
         APPLICATION_EXTENSION_API_ONLY: YES
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "WIDGET_EXTENSION"
     dependencies:
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
       - sdk: ActivityKit.framework
       - sdk: AppIntents.framework
+      - sdk: UserNotifications.framework
 
 schemes:
   LiveTimerConnect:

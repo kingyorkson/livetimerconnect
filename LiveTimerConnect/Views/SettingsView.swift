@@ -52,7 +52,7 @@ struct SettingsView: View {
                     .font(.system(size: 38, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
 
-                Text("Sync, sound, and Live Activities.")
+                Text("Sync, sound, widgets, and alerts.")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundStyle(AppTheme.textSecondary)
             }
@@ -108,7 +108,7 @@ struct SettingsView: View {
 
     private var notificationsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeading("Notifications & Sound", subtitle: "The end message and the loud ding.")
+            SectionHeading("Notifications & Sound", subtitle: "The end message, the loud ding, and Do Not Disturb.")
 
             GlassCard {
                 VStack(alignment: .leading, spacing: 15) {
@@ -117,6 +117,16 @@ struct SettingsView: View {
                         title: model.notificationsAuthorized ? "Notifications allowed" : "Notifications are off",
                         detail: notificationDetail,
                         tint: model.notificationsAuthorized ? AppTheme.green : AppTheme.orange
+                    )
+
+                    Divider()
+                        .overlay(AppTheme.stroke)
+
+                    InfoRow(
+                        icon: model.criticalAlertsEnabled ? "exclamationmark.shield.fill" : "exclamationmark.triangle.fill",
+                        title: model.criticalAlertsEnabled ? "Critical alerts allowed" : "Critical alerts not available",
+                        detail: criticalAlertDetail,
+                        tint: model.criticalAlertsEnabled ? AppTheme.green : AppTheme.orange
                     )
 
                     HStack(spacing: 10) {
@@ -179,7 +189,7 @@ struct SettingsView: View {
                         Image(systemName: "bell.slash.fill")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(AppTheme.textTertiary)
-                        Text("Alarms never use Live Activities. They ring with notifications and the custom ding.")
+                        Text("Alarms never use Live Activities. They ring with notifications and offer Stop and Snooze 9 minutes.")
                             .font(.system(size: 11, weight: .medium, design: .rounded))
                             .foregroundStyle(AppTheme.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -220,7 +230,7 @@ struct SettingsView: View {
                     InfoRow(
                         icon: "timer",
                         title: "Live Timer Connect \(model.appVersion)",
-                        detail: "Timers, alarms, iCloud sync, Live Activities, and a loud custom ding.",
+                        detail: "Timers, alarms, iCloud sync, Live Activities, widgets, and a loud custom ding.",
                         tint: AppTheme.orange
                     )
 
@@ -287,7 +297,7 @@ struct SettingsView: View {
     private var notificationDetail: String {
         switch model.notificationStatus {
         case .authorized:
-            return "Timers and alarms can send an end message and play the custom ding."
+            return "Timers and alarms send an end message and play the custom ding. Critical alerts add a full-volume ring that can pierce Do Not Disturb."
         case .provisional:
             return "Quiet notifications are allowed. Open Settings to make them prominent."
         case .ephemeral:
@@ -299,6 +309,13 @@ struct SettingsView: View {
         @unknown default:
             return "Notification permission status is unknown."
         }
+    }
+
+    private var criticalAlertDetail: String {
+        if model.criticalAlertsEnabled {
+            return "Timers and alarms can bypass Do Not Disturb, silent mode, and the mute switch."
+        }
+        return "Critical alerts need Apple's restricted entitlement. A sideloaded build can inject com.apple.developer.usernotifications.critical-alerts. As a fallback, add Live Timer Connect to Settings > Focus > Do Not Disturb > Allowed Apps."
     }
 }
 

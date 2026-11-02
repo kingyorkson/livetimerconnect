@@ -250,7 +250,7 @@ struct AddAlarmView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(AppTheme.orange)
 
-            Text("Alarms ring with the custom loud ding. They do not use Live Activities, exactly as requested.")
+            Text("Alarms ring with the custom loud ding and offer Stop or Snooze 9 minutes. They never use Live Activities.")
                 .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(AppTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
