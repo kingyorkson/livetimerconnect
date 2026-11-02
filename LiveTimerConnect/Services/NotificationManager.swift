@@ -40,7 +40,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             var granted = false
             do {
                 granted = try await center.requestAuthorization(
-                    options: [.alert, .sound, .badge, .timeSensitive, .criticalAlert]
+                    options: [.alert, .sound, .badge, .criticalAlert]
                 )
             } catch {
                 granted = false
@@ -50,7 +50,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                 // A sideloaded build can lose the critical-alerts entitlement.
                 // Standard notifications still work, so ask for those instead.
                 _ = try? await center.requestAuthorization(
-                    options: [.alert, .sound, .badge, .timeSensitive]
+                    options: [.alert, .sound, .badge]
                 )
             }
         } else if requestCritical && current.criticalAlertSetting != .enabled {
@@ -97,7 +97,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
         for alarm in snapshot.alarms {
             if alarm.isDeleted || !alarm.isEnabled {
-                NotificationSupport.cancelAlarm(id: alarm.id)
+                NotificationSupport.cancelAlarm(alarm.id)
             } else {
                 scheduleAlarm(alarm)
             }
