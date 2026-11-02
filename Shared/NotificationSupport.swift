@@ -21,7 +21,7 @@ enum NotificationSupport {
         if criticalAlertsAuthorized {
             return .criticalSoundNamed(name, withAudioVolume: 1.0)
         }
-        return .named(name)
+        return UNNotificationSound(named: name)
     }
 
     static func interruptionLevel() -> UNNotificationInterruptionLevel {
